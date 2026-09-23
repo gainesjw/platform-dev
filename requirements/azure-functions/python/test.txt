@@ -1,0 +1,3 @@
+# Python 3.14: Functions validation and smoke fixture dependencies only.
+-r ../../shared/test.txt
+-r smoke-runtime.txt

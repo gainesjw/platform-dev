@@ -1,0 +1,18 @@
+# Register as REPLACE_WITH_PROJECT-ci; add an Azure Repos main build-validation policy.
+trigger:
+  branches:
+    include: [main]
+pr:
+  branches:
+    include: [main]
+
+resources:
+  repositories:
+    - repository: platform
+      type: git
+      name: platform-dev
+      # Pin both CI/CD to the same tested release tag when available.
+      ref: refs/heads/main
+
+extends:
+  template: /templates/fabric/ci/stages.yml@platform

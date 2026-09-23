@@ -1,0 +1,119 @@
+# Reusable Azure Functions Python CI stages. Paths belong to the consumer.
+parameters:
+  - name: vmImage
+    type: string
+    default: ubuntu-latest
+  - name: pythonVersion
+    type: string
+    default: '3.14'
+  - name: runtimeRequirements
+    type: string
+    default: requirements.txt
+  - name: devRequirements
+    type: string
+    default: requirements-dev.txt
+  - name: testCommand
+    type: string
+    default: python -m pytest tests/unit -v --tb=short --junitxml=test-results/unit.xml --cov=src --cov=function_app --cov-report=xml:coverage.xml
+  - name: packagePaths
+    type: object
+    default: [src, function_app.py, host.json, requirements.txt]
+  - name: usePlatformPython
+    type: boolean
+    default: false
+  - name: platformRepository
+    type: string
+    default: platform
+  # Preserve existing consumers; new consumers should select sibling paths under s.
+  - name: appCheckoutPath
+    type: string
+    default: s
+  - name: platformCheckoutPath
+    type: string
+    default: platform
+  - name: packageValidationSteps
+    type: stepList
+    default: []
+
+stages:
+  - stage: Build
+    displayName: Test and package
+    jobs:
+      - job: BuildAndTest
+        variables:
+          platformPythonPath: $(Pipeline.Workspace)/${{ parameters.platformCheckoutPath }}/python
+        pool:
+          vmImage: ${{ parameters.vmImage }}
+        steps:
+          - checkout: self
+            path: ${{ parameters.appCheckoutPath }}
+            workspaceRepo: true
+          - ${{ if eq(parameters.usePlatformPython, true) }}:
+            - checkout: ${{ parameters.platformRepository }}
+              path: ${{ parameters.platformCheckoutPath }}
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: ${{ parameters.pythonVersion }}
+          - bash: |
+              set -euo pipefail
+              python -m pip install -r "$DEV_REQUIREMENTS"
+              python -m pip check
+            displayName: Install dependencies
+            env:
+              DEV_REQUIREMENTS: ${{ parameters.devRequirements }}
+          - bash: |
+              set -euo pipefail
+              ${{ parameters.testCommand }}
+            displayName: Run unit tests
+            ${{ if eq(parameters.usePlatformPython, true) }}:
+              env:
+                PYTHONPATH: $(platformPythonPath)
+          - task: PublishTestResults@2
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: JUnit
+              searchFolder: $(Pipeline.Workspace)/${{ parameters.appCheckoutPath }}
+              testResultsFiles: test-results/unit.xml
+              failTaskOnFailedTests: true
+              failTaskOnMissingResultsFile: true
+          - task: PublishCodeCoverageResults@2
+            condition: succeededOrFailed()
+            inputs:
+              summaryFileLocation: $(Pipeline.Workspace)/${{ parameters.appCheckoutPath }}/coverage.xml
+              failIfCoverageEmpty: true
+          - bash: |
+              set -euo pipefail
+              package="$PACKAGE_DIR"
+              mkdir -p "$package"
+              python -m pip install --target "$package/.python_packages/lib/site-packages" -r "$RUNTIME_REQUIREMENTS"
+            displayName: Install Linux package dependencies
+            env:
+              PACKAGE_DIR: $(Build.ArtifactStagingDirectory)/function-package
+              RUNTIME_REQUIREMENTS: ${{ parameters.runtimeRequirements }}
+          - ${{ each path in parameters.packagePaths }}:
+            - bash: |
+                set -euo pipefail
+                # Preserve paths relative to the application repository root.
+                cp --parents -R -- "$SOURCE_PATH" "$PACKAGE_DIR/"
+              displayName: Copy package path
+              env:
+                SOURCE_PATH: ${{ path }}
+                PACKAGE_DIR: $(Build.ArtifactStagingDirectory)/function-package
+          - ${{ parameters.packageValidationSteps }}
+          - bash: |
+              set -euo pipefail
+              cd "$PACKAGE_DIR"
+              PYTHONPATH="$PACKAGE_DIR/.python_packages/lib/site-packages" python -c 'import function_app; assert function_app.app.get_functions(), "No functions indexed"; print("Packaged Function App imports and indexes successfully")'
+              python -m compileall -q .
+            displayName: Validate and compile deployment package
+            env:
+              PACKAGE_DIR: $(Build.ArtifactStagingDirectory)/function-package
+          - task: ArchiveFiles@2
+            inputs:
+              rootFolderOrFile: $(Build.ArtifactStagingDirectory)/function-package
+              includeRootFolder: false
+              archiveType: zip
+              archiveFile: $(Build.ArtifactStagingDirectory)/function-app.zip
+              replaceExistingArchive: true
+          - publish: $(Build.ArtifactStagingDirectory)/function-app.zip
+            artifact: function-package

@@ -1,0 +1,22 @@
+# Fabric deployment runtime only. CI inventory uses the Python standard library.
+# Python 3.12; keep separate from the Azure Functions runtime and requirements.
+fabric-cicd==1.3.0
+azure-identity==1.25.1
+# Transitive pins: dependency resolution must not drift between promotions.
+azure-core==1.39.0
+certifi==2026.7.22
+cffi==2.0.0
+charset-normalizer==3.5.1
+cryptography==50.0.1
+dpath==2.2.0
+filetype==1.2.0
+idna==3.19
+jsonpath-ng==1.8.0
+msal==1.38.0
+msal-extensions==1.3.1
+pycparser==2.23
+PyJWT==2.14.0
+PyYAML==6.0.3
+requests==2.32.5
+typing-extensions==4.16.0
+urllib3==2.7.0

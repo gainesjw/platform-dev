@@ -1,0 +1,34 @@
+# Register after targets, service connections and environment checks are ready.
+trigger: none
+pr: none
+
+resources:
+  repositories:
+    - repository: platform
+      type: git
+      name: platform-dev
+      ref: refs/heads/main
+  pipelines:
+    - pipeline: fabricCI
+      source: REPLACE_WITH_PROJECT-ci
+      branch: refs/heads/main
+      trigger:
+        branches:
+          include: [refs/heads/main]
+
+extends:
+  template: /templates/fabric/cd/stages.yml@platform
+  parameters:
+    # Enable after configuring the policy API and secret pipeline variable PolicyApiKey.
+    # policyApiUrl: https://policy.example.internal
+    # policyMode: passing
+    targets:
+      dev:
+        azureServiceConnection: REPLACE_WITH_DEV_FABRIC_SERVICE_CONNECTION
+        environment: REPLACE_WITH_PROJECT-fabric-dev
+      test:
+        azureServiceConnection: REPLACE_WITH_TEST_FABRIC_SERVICE_CONNECTION
+        environment: REPLACE_WITH_PROJECT-fabric-test
+      prod:
+        azureServiceConnection: REPLACE_WITH_PROD_FABRIC_SERVICE_CONNECTION
+        environment: REPLACE_WITH_PROJECT-fabric-prod

@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "workloads": {
+    "azure-functions-python": {
+      "description": "Linux Python Azure Function Apps",
+      "ci": "templates/azure-functions/python/ci/stages.yml",
+      "cd": "templates/azure-functions/python/cd/stages.yml",
+      "examples": "examples/azure-functions/python",
+      "documentation": "docs/azure-functions/python",
+      "tests": "tests/azure_functions/python",
+      "pythonPackage": "python/platform_azure_functions",
+      "pythonVersion": "3.14",
+      "artifact": "function-package",
+      "templateRoot": "templates/azure-functions/python",
+      "combined": "templates/azure-functions/python/ci-cd.yml",
+      "validation": ".azure-pipelines/validation/azure-functions-python.yml",
+      "testRequirements": "requirements/azure-functions/python/test.txt",
+      "deploymentRequirements": null
+    },
+    "fabric-workspace": {
+      "description": "Fabric workspace items and governed promotion",
+      "ci": "templates/fabric/ci/stages.yml",
+      "cd": "templates/fabric/cd/stages.yml",
+      "examples": "examples/fabric",
+      "documentation": "docs/fabric",
+      "tests": "tests/fabric",
+      "pythonPackage": "python/platform_fabric",
+      "pythonVersion": "3.12",
+      "artifact": "fabric-release",
+      "templateRoot": "templates/fabric",
+      "combined": null,
+      "validation": ".azure-pipelines/validation/fabric.yml",
+      "testRequirements": "requirements/fabric/test.txt",
+      "deploymentRequirements": "requirements/fabric/runtime.txt"
+    }
+  }
+}

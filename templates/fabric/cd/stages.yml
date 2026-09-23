@@ -1,0 +1,45 @@
+# The fabricCI pipeline resource must be declared by the consumer.
+parameters:
+  - name: targets
+    type: object
+  - name: vmImage
+    type: string
+    default: ubuntu-latest
+
+  - name: policyApiUrl
+    type: string
+    default: ''
+  - name: policyMode
+    type: string
+    default: passing
+    values: [passing, all]
+
+stages:
+  - template: environment.yml
+    parameters:
+      name: dev
+      azureServiceConnection: ${{ parameters.targets.dev.azureServiceConnection }}
+      environment: ${{ parameters.targets.dev.environment }}
+      vmImage: ${{ parameters.vmImage }}
+      policyApiUrl: ${{ parameters.policyApiUrl }}
+      policyMode: ${{ parameters.policyMode }}
+  - template: environment.yml
+    parameters:
+      name: test
+      dependsOn: [Fabric_dev]
+      previousStage: Fabric_dev
+      azureServiceConnection: ${{ parameters.targets.test.azureServiceConnection }}
+      environment: ${{ parameters.targets.test.environment }}
+      vmImage: ${{ parameters.vmImage }}
+      policyApiUrl: ${{ parameters.policyApiUrl }}
+      policyMode: ${{ parameters.policyMode }}
+  - template: environment.yml
+    parameters:
+      name: prod
+      dependsOn: [Fabric_test]
+      previousStage: Fabric_test
+      azureServiceConnection: ${{ parameters.targets.prod.azureServiceConnection }}
+      environment: ${{ parameters.targets.prod.environment }}
+      vmImage: ${{ parameters.vmImage }}
+      policyApiUrl: ${{ parameters.policyApiUrl }}
+      policyMode: ${{ parameters.policyMode }}

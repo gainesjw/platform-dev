@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "repository": "REPLACE_WITH_PROJECT",
+  "itemRoots": [
+    "items"
+  ],
+  "allowedItemTypes": [
+    "Lakehouse",
+    "Notebook"
+  ],
+  "governance": {
+    "owner": "",
+    "classification": "internal"
+  },
+  "itemOverrides": {},
+  "dependencies": [],
+  "environments": {
+    "dev": {
+      "workspaceId": "REPLACE_WITH_DEV_WORKSPACE_ID"
+    },
+    "test": {
+      "workspaceId": "REPLACE_WITH_TEST_WORKSPACE_ID"
+    },
+    "prod": {
+      "workspaceId": "REPLACE_WITH_PROD_WORKSPACE_ID"
+    }
+  },
+  "sourceWorkspaceId": "REPLACE_WITH_EXPORTED_SOURCE_WORKSPACE_ID",
+  "externalDependencies": {}
+}

@@ -1,0 +1,89 @@
+# Optional combined entry point: composes this workload's CI and CD stages.
+parameters:
+  - name: deploy
+    type: boolean
+    default: false
+  - name: vmImage
+    type: string
+    default: ubuntu-latest
+  - name: pythonVersion
+    type: string
+    default: '3.14'
+  - name: isFlexConsumption
+    type: boolean
+    default: true
+  - name: azureServiceConnection
+    type: string
+  - name: functionAppName
+    type: string
+  - name: environment
+    type: string
+    default: production
+  - name: deploymentBranch
+    type: string
+    default: refs/heads/main
+  - name: runtimeRequirements
+    type: string
+    default: requirements.txt
+  - name: devRequirements
+    type: string
+    default: requirements-dev.txt
+  - name: testCommand
+    type: string
+    default: python -m pytest tests/unit -v --tb=short --junitxml=test-results/unit.xml --cov=src --cov=function_app --cov-report=xml:coverage.xml
+  - name: packagePaths
+    type: object
+    default: [src, function_app.py, host.json, requirements.txt]
+  - name: usePlatformPython
+    type: boolean
+    default: false
+  - name: platformRepository
+    type: string
+    default: platform
+  # Preserve existing consumers; new consumers should select sibling paths under s.
+  - name: appCheckoutPath
+    type: string
+    default: s
+  - name: platformCheckoutPath
+    type: string
+    default: platform
+  - name: packageValidationSteps
+    type: stepList
+    default: []
+  - name: beforeDeploySteps
+    type: stepList
+    default: []
+  - name: afterDeploySteps
+    type: stepList
+    default: []
+
+stages:
+  - template: /templates/azure-functions/python/ci/stages.yml
+    parameters:
+      vmImage: ${{ parameters.vmImage }}
+      pythonVersion: ${{ parameters.pythonVersion }}
+      runtimeRequirements: ${{ parameters.runtimeRequirements }}
+      devRequirements: ${{ parameters.devRequirements }}
+      testCommand: ${{ parameters.testCommand }}
+      packagePaths: ${{ parameters.packagePaths }}
+      usePlatformPython: ${{ parameters.usePlatformPython }}
+      platformRepository: ${{ parameters.platformRepository }}
+      appCheckoutPath: ${{ parameters.appCheckoutPath }}
+      platformCheckoutPath: ${{ parameters.platformCheckoutPath }}
+      packageValidationSteps: ${{ parameters.packageValidationSteps }}
+  - template: /templates/azure-functions/python/cd/stages.yml
+    parameters:
+      deploy: ${{ parameters.deploy }}
+      vmImage: ${{ parameters.vmImage }}
+      pythonVersion: ${{ parameters.pythonVersion }}
+      isFlexConsumption: ${{ parameters.isFlexConsumption }}
+      azureServiceConnection: ${{ parameters.azureServiceConnection }}
+      functionAppName: ${{ parameters.functionAppName }}
+      environment: ${{ parameters.environment }}
+      deploymentBranch: ${{ parameters.deploymentBranch }}
+      usePlatformPython: ${{ parameters.usePlatformPython }}
+      platformRepository: ${{ parameters.platformRepository }}
+      appCheckoutPath: ${{ parameters.appCheckoutPath }}
+      platformCheckoutPath: ${{ parameters.platformCheckoutPath }}
+      beforeDeploySteps: ${{ parameters.beforeDeploySteps }}
+      afterDeploySteps: ${{ parameters.afterDeploySteps }}

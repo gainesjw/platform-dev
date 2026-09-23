@@ -1,0 +1,44 @@
+# Compose independent CI and CD components in one pipeline run.
+# Copy to .azure-pipelines/azure-pipelines.yml in the app repo.
+trigger:
+  branches:
+    include: [main]
+
+parameters:
+  - name: deploy
+    type: boolean
+    default: false
+
+resources:
+  repositories:
+    - repository: platform
+      type: git
+      name: platform-dev
+      # Pin both components to the same existing release tag when available.
+      ref: refs/heads/main
+
+stages:
+  - template: /templates/azure-functions/python/ci/stages.yml@platform
+    parameters:
+      pythonVersion: '3.14'
+      appCheckoutPath: s/$(Build.Repository.Name)
+      platformCheckoutPath: s/platform-dev
+      # usePlatformPython: true
+      # packageValidationSteps:
+      #   - template: /.azure-pipelines/templates/package-validation.yml@self
+  - template: /templates/azure-functions/python/cd/stages.yml@platform
+    parameters:
+      deploy: ${{ parameters.deploy }}
+      azureServiceConnection: REPLACE_WITH_SERVICE_CONNECTION
+      functionAppName: REPLACE_WITH_FUNCTION_APP_NAME
+      environment: production
+      pythonVersion: '3.14'
+      isFlexConsumption: true
+      appCheckoutPath: s/$(Build.Repository.Name)
+      platformCheckoutPath: s/platform-dev
+      # usePlatformPython: true
+      # Hook steps that import platform_azure_functions set PYTHONPATH: $(platformPythonPath).
+      # beforeDeploySteps:
+      #   - template: /.azure-pipelines/templates/before-deploy.yml@self
+      # afterDeploySteps:
+      #   - template: /.azure-pipelines/templates/after-deploy.yml@self

@@ -1,0 +1,51 @@
+# Verify the selected upstream run before download, hooks or deployment.
+# CI and CD must belong to the same application repository and project.
+parameters:
+  - name: artifactPipeline
+    type: string
+  - name: deploymentBranch
+    type: string
+
+steps:
+  - bash: |
+      set -euo pipefail
+      python - <<'PY'
+      import json
+      import os
+      import urllib.request
+
+      def require(condition, message):
+          if not condition:
+              raise RuntimeError(message)
+
+      run_id = os.environ['CI_RUN_ID']
+      require(run_id.isdecimal(), 'Pipeline resource did not resolve a CI run ID')
+      url = (os.environ['COLLECTION_URI'].rstrip('/') + '/' + os.environ['PROJECT_ID']
+             + '/_apis/build/builds/' + run_id + '?api-version=7.1')
+      request = urllib.request.Request(url, headers={
+          'Authorization': 'Bearer ' + os.environ['SYSTEM_ACCESSTOKEN']})
+      with urllib.request.urlopen(request, timeout=30) as response:
+          build = json.load(response)
+      require(build.get('status') == 'completed' and build.get('result') == 'succeeded',
+              'CD requires a completed, successful CI run (all stages)')
+      require(str(build.get('definition', {}).get('id')) == os.environ['CI_PIPELINE_ID'],
+              'Selected run does not belong to the configured CI pipeline')
+      require(build.get('reason') != 'pullRequest', 'PR builds cannot be deployed')
+      require(build.get('sourceBranch') == os.environ['DEPLOYMENT_BRANCH'],
+              'CI artifact is not from the allowed deployment branch')
+      require(build.get('repository', {}).get('id') == os.environ['APP_REPOSITORY_ID'],
+              'CI and CD must use the same application repository')
+      require(build.get('sourceVersion') == os.environ['APP_SOURCE_VERSION'],
+              'CD checkout differs from CI commit; use the CI completion trigger or run CD at the matching commit')
+      print('Selected CI run passed release checks')
+      PY
+    displayName: Verify successful CI run and matching application revision
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+      COLLECTION_URI: $(System.CollectionUri)
+      PROJECT_ID: $(System.TeamProjectId)
+      CI_RUN_ID: $(resources.pipeline.${{ parameters.artifactPipeline }}.runID)
+      CI_PIPELINE_ID: $(resources.pipeline.${{ parameters.artifactPipeline }}.pipelineID)
+      DEPLOYMENT_BRANCH: ${{ parameters.deploymentBranch }}
+      APP_REPOSITORY_ID: $(Build.Repository.ID)
+      APP_SOURCE_VERSION: $(Build.SourceVersion)

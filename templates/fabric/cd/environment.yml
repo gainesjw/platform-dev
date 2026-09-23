@@ -1,0 +1,123 @@
+parameters:
+  - name: name
+    type: string
+    values: [dev, test, prod]
+  - name: dependsOn
+    type: object
+    default: []
+  - name: previousStage
+    type: string
+    default: ''
+  - name: azureServiceConnection
+    type: string
+  - name: environment
+    type: string
+  - name: vmImage
+    type: string
+    default: ubuntu-latest
+
+  - name: policyApiUrl
+    type: string
+    default: ''
+  - name: policyMode
+    type: string
+    default: passing
+    values: [passing, all]
+
+stages:
+  - stage: Fabric_${{ parameters.name }}
+    displayName: Promote Fabric items to ${{ parameters.name }}
+    dependsOn: ${{ parameters.dependsOn }}
+    ${{ if eq(parameters.previousStage, '') }}:
+      condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    ${{ else }}:
+      condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq(dependencies.${{ parameters.previousStage }}.result, 'Succeeded'))
+    lockBehavior: sequential
+    jobs:
+      - deployment: PublishWorkspace
+        environment: ${{ parameters.environment }}
+        pool:
+          vmImage: ${{ parameters.vmImage }}
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: none
+                - download: none
+                - bash: |
+                    set -euo pipefail
+                    mkdir -p "$RECEIPT_DIRECTORY"
+                    printf '%s\n' '{"status":"notStarted"}' > "$RECEIPT_DIRECTORY/deployment.json"
+                  displayName: Initialize deployment receipt
+                  env:
+                    RECEIPT_DIRECTORY: $(Build.ArtifactStagingDirectory)/fabric-${{ parameters.name }}
+                - task: UsePythonVersion@0
+                  inputs:
+                    versionSpec: '3.12'
+                - template: verify-ci-run.yml
+                - download: fabricCI
+                  artifact: fabric-release
+                - bash: |
+                    set -euo pipefail
+                    python -m platform_fabric verify --release "$RELEASE_ROOT"
+                    python -m pip install -r "$RELEASE_ROOT/tooling/requirements.txt"
+                    python -m pip check
+                  displayName: Verify release integrity and install Fabric tooling
+                  env:
+                    PYTHONDONTWRITEBYTECODE: '1'
+                    PYTHONPATH: $(Pipeline.Workspace)/fabricCI/fabric-release/tooling
+                    RELEASE_ROOT: $(Pipeline.Workspace)/fabricCI/fabric-release
+                    CI_RUN_ID: $(resources.pipeline.fabricCI.runID)
+                    CI_SOURCE_VERSION: $(resources.pipeline.fabricCI.sourceCommit)
+                    CI_SOURCE_BRANCH: $(resources.pipeline.fabricCI.sourceBranch)
+                    CI_REPOSITORY_ID: $(Build.Repository.ID)
+                - ${{ if ne(parameters.policyApiUrl, '') }}:
+                    - bash: |
+                        set -euo pipefail
+                        python -m platform_fabric review --release "$RELEASE_ROOT" \
+                          --environment "$TARGET_ENVIRONMENT" --url "$POLICY_API_URL" \
+                          --receipt "$POLICY_REVIEW_PATH"
+                      displayName: Review artifact policies
+                      env:
+                        PYTHONDONTWRITEBYTECODE: '1'
+                        PYTHONPATH: $(Pipeline.Workspace)/fabricCI/fabric-release/tooling
+                        RELEASE_ROOT: $(Pipeline.Workspace)/fabricCI/fabric-release
+                        TARGET_ENVIRONMENT: ${{ parameters.name }}
+                        POLICY_API_URL: ${{ parameters.policyApiUrl }}
+                        POLICY_API_KEY: $(PolicyApiKey)
+                        POLICY_REVIEW_PATH: $(Build.ArtifactStagingDirectory)/fabric-${{ parameters.name }}/policy.json
+                        CI_RUN_ID: $(resources.pipeline.fabricCI.runID)
+                        CI_SOURCE_VERSION: $(resources.pipeline.fabricCI.sourceCommit)
+                        CI_SOURCE_BRANCH: $(resources.pipeline.fabricCI.sourceBranch)
+                        CI_REPOSITORY_ID: $(Build.Repository.ID)
+                - task: AzureCLI@2
+                  displayName: Publish and verify ${{ parameters.name }} workspace
+                  inputs:
+                    azureSubscription: ${{ parameters.azureServiceConnection }}
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      set -euo pipefail
+                      policy_args=()
+                      if [ -n "$POLICY_API_URL" ]; then
+                        policy_args=(--policy-review "$POLICY_REVIEW_PATH" --policy-mode "$POLICY_MODE")
+                      fi
+                      python -m platform_fabric deploy --release "$RELEASE_ROOT" \
+                        --environment "$TARGET_ENVIRONMENT" --receipt "$RECEIPT_PATH" "${policy_args[@]}"
+                  env:
+                    PYTHONDONTWRITEBYTECODE: '1'
+                    PYTHONPATH: $(Pipeline.Workspace)/fabricCI/fabric-release/tooling
+                    RELEASE_ROOT: $(Pipeline.Workspace)/fabricCI/fabric-release
+                    TARGET_ENVIRONMENT: ${{ parameters.name }}
+                    POLICY_API_URL: ${{ parameters.policyApiUrl }}
+                    POLICY_MODE: ${{ parameters.policyMode }}
+                    POLICY_REVIEW_PATH: $(Build.ArtifactStagingDirectory)/fabric-${{ parameters.name }}/policy.json
+                    RECEIPT_PATH: $(Build.ArtifactStagingDirectory)/fabric-${{ parameters.name }}/deployment.json
+                    CI_RUN_ID: $(resources.pipeline.fabricCI.runID)
+                    CI_SOURCE_VERSION: $(resources.pipeline.fabricCI.sourceCommit)
+                    CI_SOURCE_BRANCH: $(resources.pipeline.fabricCI.sourceBranch)
+                    CI_REPOSITORY_ID: $(Build.Repository.ID)
+                - publish: $(Build.ArtifactStagingDirectory)/fabric-${{ parameters.name }}
+                  artifact: fabric-${{ parameters.name }}-receipt-$(System.StageAttempt)
+                  condition: succeededOrFailed()
+                  displayName: Publish deployment receipt

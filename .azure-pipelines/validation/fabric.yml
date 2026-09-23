@@ -1,0 +1,28 @@
+# Private platform validation; not a consumer deployment template.
+stages:
+  - stage: FabricSDKContracts
+    displayName: Validate Fabric templates and SDK independently
+    jobs:
+      - job: OfflineFabricSDK
+        steps:
+          - checkout: self
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: '3.12'
+          - bash: |
+              set -euo pipefail
+              python -m pip install -r requirements/fabric/test.txt
+              python -m pip check
+              python -m pytest tests/fabric tests/contracts -v --junitxml=test-results/fabric.xml
+              python tests/fabric/fabric_sdk_smoke.py
+            displayName: Verify generated bindings against the pinned Fabric SDK
+            env:
+              PYTHONPATH: $(Build.SourcesDirectory)/python
+              PYTHONDONTWRITEBYTECODE: '1'
+          - task: PublishTestResults@2
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: JUnit
+              testResultsFiles: test-results/fabric.xml
+              failTaskOnFailedTests: true
+              failTaskOnMissingResultsFile: true

@@ -1,0 +1,23 @@
+# Copy to .azure-pipelines/ci.yml and register it as the app's CI pipeline.
+# No Azure target or service connection is required.
+trigger:
+  branches:
+    include: [main]
+
+resources:
+  repositories:
+    - repository: platform
+      type: git
+      name: platform-dev
+      # Replace with an existing tested release tag for controlled upgrades.
+      ref: refs/heads/main
+
+stages:
+  - template: /templates/azure-functions/python/ci/stages.yml@platform
+    parameters:
+      pythonVersion: '3.14'
+      appCheckoutPath: s/$(Build.Repository.Name)
+      platformCheckoutPath: s/platform-dev
+      # usePlatformPython: true
+      # packageValidationSteps:
+      #   - template: /.azure-pipelines/templates/package-validation.yml@self

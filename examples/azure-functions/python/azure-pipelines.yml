@@ -1,0 +1,41 @@
+# Copy to .azure-pipelines/azure-pipelines.yml in a Python Function App repo.
+# Replace the two target placeholders and provision/authorize the environment.
+trigger:
+  branches:
+    include: [main]
+
+parameters:
+  - name: deploy
+    displayName: Deploy after successful build (main only)
+    type: boolean
+    default: false
+
+resources:
+  repositories:
+    - repository: platform
+      type: git
+      name: platform-dev
+      ref: refs/heads/main
+
+extends:
+  template: /templates/azure-functions/python/ci-cd.yml@platform
+  parameters:
+    deploy: ${{ parameters.deploy }}
+    appCheckoutPath: s/$(Build.Repository.Name)
+    platformCheckoutPath: s/platform-dev
+    azureServiceConnection: REPLACE_WITH_SERVICE_CONNECTION
+    functionAppName: REPLACE_WITH_FUNCTION_APP_NAME
+    environment: production
+    pythonVersion: '3.14'
+    isFlexConsumption: true
+    packagePaths: [src, function_app.py, host.json, requirements.txt]
+    # Enable when app tests/hooks import platform_azure_functions:
+    # usePlatformPython: true
+    # Hook steps must set PYTHONPATH: $(platformPythonPath).
+    # Optional app-specific steps, resolved from the consuming repository:
+    # packageValidationSteps:
+    #   - template: /.azure-pipelines/templates/package-validation.yml@self
+    # beforeDeploySteps:
+    #   - template: /.azure-pipelines/templates/before-deploy.yml@self
+    # afterDeploySteps:
+    #   - template: /.azure-pipelines/templates/after-deploy.yml@self

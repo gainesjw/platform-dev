@@ -1,0 +1,110 @@
+# Reusable Azure Functions Python CD stages. Paths belong to the consumer.
+parameters:
+  - name: deploy
+    type: boolean
+    default: false
+  - name: vmImage
+    type: string
+    default: ubuntu-latest
+  - name: pythonVersion
+    type: string
+    default: '3.14'
+  - name: isFlexConsumption
+    type: boolean
+    default: true
+  - name: azureServiceConnection
+    type: string
+  - name: functionAppName
+    type: string
+  - name: environment
+    type: string
+    default: production
+  - name: deploymentBranch
+    type: string
+    default: refs/heads/main
+  - name: usePlatformPython
+    type: boolean
+    default: false
+  - name: platformRepository
+    type: string
+    default: platform
+  # Preserve existing consumers; new consumers should select sibling paths under s.
+  - name: appCheckoutPath
+    type: string
+    default: s
+  - name: platformCheckoutPath
+    type: string
+    default: platform
+  - name: beforeDeploySteps
+    type: stepList
+    default: []
+  - name: afterDeploySteps
+    type: stepList
+    default: []
+  - name: dependsOn
+    type: object
+    default: [Build]
+  # 'current' preserves combined-pipeline behavior; otherwise use a pipeline resource alias.
+  - name: artifactPipeline
+    type: string
+    default: current
+
+stages:
+  - ${{ if eq(parameters.deploy, true) }}:
+    - stage: Deploy
+      displayName: Deploy and verify in Azure
+      dependsOn: ${{ parameters.dependsOn }}
+      condition: and(succeeded(), eq(variables['Build.SourceBranch'], '${{ parameters.deploymentBranch }}'), ne(variables['Build.Reason'], 'PullRequest'))
+      # Configure an exclusive lock check on the selected environment.
+      lockBehavior: sequential
+      jobs:
+        - deployment: DeployFunctionApp
+          variables:
+            platformPythonPath: $(Pipeline.Workspace)/${{ parameters.platformCheckoutPath }}/python
+            ${{ if eq(parameters.artifactPipeline, 'current') }}:
+              functionPackagePath: $(Pipeline.Workspace)/function-package/function-app.zip
+              artifactBuildId: $(Build.BuildId)
+              artifactSourceVersion: $(Build.SourceVersion)
+            ${{ else }}:
+              functionPackagePath: $(Pipeline.Workspace)/${{ parameters.artifactPipeline }}/function-package/function-app.zip
+              artifactBuildId: $(resources.pipeline.${{ parameters.artifactPipeline }}.runID)
+              artifactSourceVersion: $(resources.pipeline.${{ parameters.artifactPipeline }}.sourceCommit)
+          environment: ${{ parameters.environment }}
+          timeoutInMinutes: 30
+          pool:
+            vmImage: ${{ parameters.vmImage }}
+          strategy:
+            runOnce:
+              deploy:
+                steps:
+                  - checkout: self
+                    path: ${{ parameters.appCheckoutPath }}
+                    workspaceRepo: true
+                  - ${{ if eq(parameters.usePlatformPython, true) }}:
+                    - checkout: ${{ parameters.platformRepository }}
+                      path: ${{ parameters.platformCheckoutPath }}
+                  # Prevent implicit downloads from selecting unrelated artifacts.
+                  - download: none
+                  - task: UsePythonVersion@0
+                    inputs:
+                      versionSpec: ${{ parameters.pythonVersion }}
+                  - ${{ if ne(parameters.artifactPipeline, 'current') }}:
+                    - template: verify-ci-run.yml
+                      parameters:
+                        artifactPipeline: ${{ parameters.artifactPipeline }}
+                        deploymentBranch: ${{ parameters.deploymentBranch }}
+                  - download: ${{ parameters.artifactPipeline }}
+                    artifact: function-package
+                  - ${{ parameters.beforeDeploySteps }}
+                  - task: AzureFunctionApp@2
+                    displayName: Deploy tested artifact
+                    inputs:
+                      azureSubscription: ${{ parameters.azureServiceConnection }}
+                      appType: functionAppLinux
+                      appName: ${{ parameters.functionAppName }}
+                      package: $(functionPackagePath)
+                      isFlexConsumption: ${{ parameters.isFlexConsumption }}
+                      ${{ if eq(parameters.isFlexConsumption, false) }}:
+                        deploymentMethod: zipDeploy
+                        runtimeStack: PYTHON|${{ parameters.pythonVersion }}
+                  - ${{ parameters.afterDeploySteps }}

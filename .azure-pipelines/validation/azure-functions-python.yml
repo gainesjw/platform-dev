@@ -1,0 +1,119 @@
+# Private platform validation; not a consumer deployment template.
+stages:
+  - stage: AzureFunctionsTests
+    dependsOn: []
+    jobs:
+      - job: UnitAndContractTests
+        steps:
+          - checkout: self
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: '3.14'
+          - bash: |
+              set -euo pipefail
+              python -m pip install -r requirements/azure-functions/python/test.txt
+              python -m pip check
+              python -m pytest tests/azure_functions/python tests/contracts -v --junitxml=test-results/unit.xml
+            displayName: Test helpers, template contracts and package failures
+          - task: PublishTestResults@2
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: JUnit
+              testResultsFiles: test-results/unit.xml
+              failTaskOnFailedTests: true
+              failTaskOnMissingResultsFile: true
+
+  # Execute the candidate template from this checkout, never a main-branch copy.
+  # CI has no deployment inputs; no Azure resources or credentials are used.
+  - template: /templates/azure-functions/python/ci/stages.yml
+    parameters:
+      devRequirements: requirements/azure-functions/python/test.txt
+      testCommand: |
+        python tests/azure_functions/python/prepare_smoke_app.py .
+        python -m pytest tests/azure_functions/python/fixtures/function_app/smoke.py -v --junitxml=test-results/unit.xml --cov=src --cov=function_app --cov-report=xml:coverage.xml
+      packageValidationSteps:
+        - bash: |
+            set -euo pipefail
+            python - <<'PY'
+            import os
+            from pathlib import Path
+            package = Path(os.environ['PACKAGE_DIR'])
+            for name in ('function_app.py', 'host.json', 'requirements.txt', 'src/__init__.py', '.python_packages/lib/site-packages/azure/functions/__init__.py'):
+                assert (package / name).is_file(), f'Missing packaged file: {name}'
+            for name in ('tests', 'python', '.git', '.venv', 'local.settings.json'):
+                assert not (package / name).exists(), f'Unexpected packaged path: {name}'
+            PY
+          displayName: Check fixture package contents
+          env:
+            PACKAGE_DIR: $(Build.ArtifactStagingDirectory)/function-package
+
+  - stage: InspectArtifact
+    dependsOn: Build
+    jobs:
+      - job: VerifyPublishedZip
+        steps:
+          - checkout: none
+          - download: current
+            artifact: function-package
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: '3.14'
+          - bash: |
+              set -euo pipefail
+              python - <<'PY'
+              import os
+              from pathlib import Path
+              import subprocess
+              import sys
+              import tempfile
+              import zipfile
+              archive = Path(os.environ['PACKAGE_ZIP'])
+              with zipfile.ZipFile(archive) as bundle, tempfile.TemporaryDirectory() as directory:
+                  names = set(bundle.namelist())
+                  assert {'function_app.py', 'host.json', 'requirements.txt', 'src/__init__.py'} <= names
+                  assert not any(n.split('/')[0] in {'tests', 'python', '.git', '.venv', 'local.settings.json'} for n in names)
+                  bundle.extractall(directory)
+                  env = dict(os.environ, PYTHONPATH=str(Path(directory) / '.python_packages/lib/site-packages'))
+                  # -S excludes agent-installed packages: imports must use ZIP dependencies.
+                  subprocess.run([sys.executable, '-S', '-c',
+                      'import function_app; assert len(function_app.app.get_functions()) == 1'],
+                      cwd=directory, env=env, check=True)
+              PY
+            displayName: Verify published ZIP is self-contained
+            env:
+              PACKAGE_ZIP: $(Pipeline.Workspace)/function-package/function-app.zip
+
+  - stage: ContainerSmoke
+    dependsOn: InspectArtifact
+    variables:
+      # Match the Function App template's runtime; retain resolved image diagnostics.
+      functionsTestImage: mcr.microsoft.com/azure-functions/python:4-python3.14
+    jobs:
+      - job: RunFunctionsHost
+        timeoutInMinutes: 20
+        steps:
+          - checkout: self
+          - download: current
+            artifact: function-package
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: '3.14'
+          - bash: |
+              set -euo pipefail
+              python -m pip install -r requirements/azure-functions/python/test.txt
+              python -m pytest tests/azure_functions/python/container_smoke.py -v --tb=short --junitxml=test-results/container.xml
+            displayName: Start packaged app in the Azure Functions host
+            env:
+              PACKAGE_ZIP: $(Pipeline.Workspace)/function-package/function-app.zip
+              FUNCTIONS_TEST_IMAGE: $(functionsTestImage)
+              CONTAINER_LOG_DIR: $(Build.ArtifactStagingDirectory)/container-diagnostics
+          - task: PublishTestResults@2
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: JUnit
+              testResultsFiles: test-results/container.xml
+              failTaskOnFailedTests: true
+              failTaskOnMissingResultsFile: true
+          - publish: $(Build.ArtifactStagingDirectory)/container-diagnostics
+            artifact: container-diagnostics
+            condition: succeededOrFailed()

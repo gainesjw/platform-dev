@@ -1,0 +1,40 @@
+# Fabric workspace items only. No Function App packaging or deployment hooks.
+parameters:
+  - name: vmImage
+    type: string
+    default: ubuntu-latest
+
+stages:
+  - stage: FabricCI
+    displayName: Validate and package Fabric items
+    jobs:
+      - job: InventoryAndPackage
+        pool:
+          vmImage: ${{ parameters.vmImage }}
+        steps:
+          - checkout: self
+            path: s/fabric-source
+            workspaceRepo: true
+            clean: true
+          - checkout: platform
+            path: s/platform
+            clean: true
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: '3.12'
+          - bash: |
+              set -euo pipefail
+              git diff --check
+              export PLATFORM_VERSION="$(git -C "$PLATFORM_ROOT" rev-parse HEAD)"
+              python -m platform_fabric build --root "$SOURCE_ROOT" --output "$RELEASE_ROOT"
+              echo "##vso[task.uploadsummary]$RELEASE_ROOT/inventory/README.md"
+            displayName: Generate manifests, dependency graphs and immutable release
+            env:
+              PYTHONDONTWRITEBYTECODE: '1'
+              PYTHONPATH: $(Pipeline.Workspace)/s/platform/python
+              PLATFORM_ROOT: $(Pipeline.Workspace)/s/platform
+              SOURCE_ROOT: $(Pipeline.Workspace)/s/fabric-source
+              RELEASE_ROOT: $(Build.ArtifactStagingDirectory)/fabric-release
+          - publish: $(Build.ArtifactStagingDirectory)/fabric-release
+            artifact: fabric-release
+            displayName: Publish Fabric release and governance inventory

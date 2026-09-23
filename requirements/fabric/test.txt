@@ -1,0 +1,3 @@
+# Python 3.12: Fabric validation and SDK contracts only.
+-r ../shared/test.txt
+-r runtime.txt

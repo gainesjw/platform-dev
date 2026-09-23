@@ -1,0 +1,39 @@
+# Register as a SEPARATE app CD pipeline after provisioning its Azure target.
+# Keep both CI and CD YAML files in the same application repository/project.
+trigger: none
+pr: none
+
+resources:
+  repositories:
+    - repository: platform
+      type: git
+      name: platform-dev
+      # Pin to the same existing release tag as ci.yml before production use.
+      ref: refs/heads/main
+  pipelines:
+    - pipeline: appCI
+      source: REPLACE_WITH_APP_CI_PIPELINE_NAME
+      branch: refs/heads/main
+      trigger:
+        branches:
+          include: [refs/heads/main]
+
+stages:
+  - template: /templates/azure-functions/python/cd/stages.yml@platform
+    parameters:
+      deploy: true
+      dependsOn: []
+      artifactPipeline: appCI
+      azureServiceConnection: REPLACE_WITH_SERVICE_CONNECTION
+      functionAppName: REPLACE_WITH_FUNCTION_APP_NAME
+      environment: production
+      pythonVersion: '3.14'
+      isFlexConsumption: true
+      appCheckoutPath: s/$(Build.Repository.Name)
+      platformCheckoutPath: s/platform-dev
+      # usePlatformPython: true
+      # Hooks can read the tested ZIP at $(functionPackagePath).
+      # beforeDeploySteps:
+      #   - template: /.azure-pipelines/templates/before-deploy.yml@self
+      # afterDeploySteps:
+      #   - template: /.azure-pipelines/templates/after-deploy.yml@self

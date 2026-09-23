@@ -1,0 +1,45 @@
+# Independent Fabric release gate; no dependency on Azure Functions templates.
+steps:
+  - bash: |
+      set -euo pipefail
+      python - <<'PY'
+      import json
+      import os
+      import urllib.request
+
+      def require(condition, message):
+          if not condition:
+              raise RuntimeError(message)
+
+      run_id = os.environ['CI_RUN_ID']
+      require(run_id.isdecimal(), 'Missing CI pipeline resource run ID')
+      url = (os.environ['COLLECTION_URI'].rstrip('/') + '/' + os.environ['PROJECT_ID']
+             + '/_apis/build/builds/' + run_id + '?api-version=7.1')
+      request = urllib.request.Request(url, headers={
+          'Authorization': 'Bearer ' + os.environ['SYSTEM_ACCESSTOKEN']})
+      with urllib.request.urlopen(request, timeout=30) as response:
+          build = json.load(response)
+      require(build.get('status') == 'completed' and build.get('result') == 'succeeded',
+              'Promotion requires a completed, successful CI run')
+      require(str(build.get('id')) == run_id, 'CI run ID mismatch')
+      require(str(build.get('definition', {}).get('id')) == os.environ['CI_PIPELINE_ID'],
+              'CI pipeline mismatch')
+      require(build.get('reason') != 'pullRequest', 'PR artifacts cannot be promoted')
+      require(build.get('sourceBranch') == 'refs/heads/main', 'Only main artifacts can be promoted')
+      require(build.get('repository', {}).get('id') == os.environ['APP_REPOSITORY_ID'],
+              'CI and CD must use the same repository')
+      require(build.get('sourceVersion') == os.environ['APP_SOURCE_VERSION'],
+              'CI/CD commit mismatch; use completion triggers or a matching-commit manual run')
+      require(build.get('sourceVersion') == os.environ['CI_SOURCE_VERSION'], 'CI resource commit mismatch')
+      print('Fabric CI release gate passed')
+      PY
+    displayName: Verify selected successful main CI run
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+      COLLECTION_URI: $(System.CollectionUri)
+      PROJECT_ID: $(System.TeamProjectId)
+      CI_RUN_ID: $(resources.pipeline.fabricCI.runID)
+      CI_PIPELINE_ID: $(resources.pipeline.fabricCI.pipelineID)
+      CI_SOURCE_VERSION: $(resources.pipeline.fabricCI.sourceCommit)
+      APP_REPOSITORY_ID: $(Build.Repository.ID)
+      APP_SOURCE_VERSION: $(Build.SourceVersion)

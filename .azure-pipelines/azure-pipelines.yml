@@ -1,0 +1,24 @@
+# Fixed entry point for the registered platform-dev-validation pipeline.
+# Keep this file here; workload validation is composed from adjacent private templates.
+trigger:
+  branches:
+    include: [main]
+  paths:
+    include:
+      - python/**
+      - tests/**
+      - templates/**
+      - examples/**
+      - docs/**
+      - catalog.json
+      - README.md
+      - requirements/**
+      - pytest.ini
+      - .azure-pipelines/**
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+  - template: validation/fabric.yml
+  - template: validation/azure-functions-python.yml
